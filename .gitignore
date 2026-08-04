@@ -1,0 +1,11 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+
+# Large simulation outputs / raw data (kept locally on OneDrive only, not in git)
+01_Data/
+
+# Oversized reference archive (over GitHub's 100MB file limit)
+04_Refs/General.zip
+.DS_Store
