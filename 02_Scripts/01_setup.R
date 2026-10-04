@@ -118,8 +118,17 @@ lhs_sample <- matrix (nrow = nrow(A), ncol = ncol(A))
 
 # vacc sae and death
 lhs_sample [,1]   <- qbeta(A[,1], shape1 = 6+0.5, shape2 = 32949-6+0.5) # conservative values
-lhs_sample [,2]   <- qbeta(A[,2], shape1 = 20+0.5, shape2 = 18445-20+0.5) # conservative values
-lhs_sample [,3]   <- qbeta(A[,3], shape1 = 0+0.5, shape2 = 32949-0+0.5) # conservative values
+# p_sae_vacc_65: 19 SAEs observed / 18,445 65+ vaccinees, matching
+# 01_Data/all_risk_four_age.csv exactly (was 20 -- an unexplained +1 not
+# matching the CSV source; corrected per explicit decision, chat record
+# 2026-09-02).
+lhs_sample [,2]   <- qbeta(A[,2], shape1 = 19+0.5, shape2 = 18445-19+0.5) # conservative values
+# p_death_vacc_u65: fixed at exactly 0 (0 deaths observed in 32,949 under-65
+# vaccinees) -- previously drawn from qbeta(0.5, 32949.5), a Jeffreys-prior
+# point estimate that is small but NOT exactly 0 (mean ~0.0015%). Changed to
+# a hard 0 per explicit decision (chat record 2026-08-27): 18-64
+# vaccine-attributable death is assumed impossible, not merely rare.
+lhs_sample [,3]   <- 0
 lhs_sample [,4]   <- qbeta(A[,4], shape1 = 1+0.5, shape2 = 18445-1+0.5) # conservative values
 
 # natural hospitalisation (case + 1 / n - case + 1)

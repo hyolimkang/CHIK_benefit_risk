@@ -62,23 +62,21 @@ if (!dir.exists("01_Data") && dir.exists(file.path("..", "01_Data"))) {
 # DATA_MODE selects which simulation dataset (FOI / immunity assumption) to load:
 #   "original" : sim_results_vc_ixchiq_model       (long-term average FOI; R0 = 1 - exp(-FOI * age))
 #   "flat"     : sim_results_vc_ixchiq_model_flat  (flat immunity, 12-yr exposure; R0 = 1 - exp(-FOI * 12))
-#   "bahia"    : sim_results_vc_ixchiq_model_Bahia (single epidemic, high FOI; R0 = 1 - exp(-0.85 * 1))
-# DATA_MODE <- "flat"
+DATA_MODE <- "flat"
 #DATA_MODE <- "original"
-DATA_MODE <- "bahia"
 
-stopifnot(DATA_MODE %in% c("original", "flat", "bahia"))
+stopifnot(DATA_MODE %in% c("original", "flat"))
+
+# Suffix applied to all save() output filenames below, so re-running under a
+# different DATA_MODE never silently overwrites another mode's results.
+MODE_SUFFIX <- switch(DATA_MODE,
+                       "original" = "_longterm",
+                       "flat"     = "_finite")
 
 # REGIONS_TO_RUN (applies to "original" and "flat", which hold all 11 states):
 #   NULL        = analyse all 11 regions
 #   c("Bahia")  = subset tables/loops to Bahia only
-# (ignored for "bahia" mode, which is already Bahia-only)
-REGIONS_TO_RUN <- c("Bahia")
-# REGIONS_TO_RUN <- NULL
-
-BAHIA_REGION <- "Bahia"
-# Back-compat alias for any downstream reference
-USE_BAHIA_DATA <- (DATA_MODE == "bahia")
+REGIONS_TO_RUN <- NULL
 
 subset_named_list <- function(x, keep_names) {
   missing <- setdiff(keep_names, names(x))
@@ -118,14 +116,6 @@ apply_regions_filter_post_setup <- function(regions = REGIONS_TO_RUN) {
   invisible(NULL)
 }
 
-load_bahia_rdata <- function(path, label = path) {
-  if (!file.exists(path)) {
-    stop("Bahia data file not found: ", path, " (", label, ")", call. = FALSE)
-  }
-  load(path, envir = .GlobalEnv)
-  message("[03_v3] Loaded Bahia data: ", path)
-}
-
 # =============================================================================
 # SECTION 01. Global setup and shared inputs
 # =============================================================================
@@ -151,31 +141,23 @@ load("01_Data/lhs_orv.RData")
 load("01_Data/pop_by_state.RData")
 load("01_Data/lhs_sample.RData")
 
-if (DATA_MODE == "bahia") {
-  message("[03_v3] Data mode: bahia (single epidemic, R0 = 1 - exp(-0.85 * 1))")
-  load("01_Data/preui_bh_flat.RData")
-  load("01_Data/posterior_bh_flat.RData")
-  load_bahia_rdata("01_Data/sim_results_vc_ixchiq_model_Bahia.RData")
-  load_bahia_rdata("01_Data/postsim_vc_ixchiq_model_Bahia.RData")
-  load_bahia_rdata("01_Data/prevacc_sets_ve_Bahia.RData")
-  load_bahia_rdata("01_Data/combined_nnv_df_region_coverage_model_Bahia.RData")
-} else if (DATA_MODE == "flat") {
-  message("[03_v3] Data mode: flat (11 states, flat immunity, R0 = 1 - exp(-FOI * 12))")
+if (DATA_MODE == "flat") {
+  message("[03_v3] Data mode: flat (11 states, flat immunity, R0 = 1 - exp(-FOI * (2022-2014)))")
   load("01_Data/preui_flat_all.RData")
-  load("01_Data/posterior_flat_all.RData")
-  load("01_Data/sim_results_vc_ixchiq_model_flat.RData")
-  load("01_Data/postsim_vc_ixchiq_model_flat.RData")
-  load("01_Data/combined_nnv_df_region_coverage_model.RData")
+  load("01_Data/posterior_finite_all.RData")
+  load("01_Data/sim_results_vc_ixchiq_model_finite.RData")
+  load("01_Data/postsim_vc_ixchiq_model_finite.RData")
+  load("01_Data/combined_nnv_df_region_coverage_model_finite.RData")
   if (!is.null(REGIONS_TO_RUN)) {
     apply_regions_filter(REGIONS_TO_RUN)
   }
-} else {  # "original"
+} else {   "original"
   message("[03_v3] Data mode: original (11 states, long-term avg FOI, R0 = 1 - exp(-FOI * age))")
-  load("01_Data/preui_all.RData")             # named list 'preui_all' (11 regions)
-  load("01_Data/posterior_flat_all.RData")    # shared pre-vacc posterior fit (rho/base_beta/I0)
-  load("01_Data/sim_results_vc_ixchiq_model.RData")
-  load("01_Data/postsim_vc_ixchiq_model.RData")
-  load("01_Data/combined_nnv_df_region_coverage_model.RData")
+  load("01_Data/preui_longterm_all.RData")             # individual preui_* objects (11 regions); combined into preui_all below
+  load("01_Data/posterior_longterm_all.RData")    # shared pre-vacc posterior fit (rho/base_beta/I0); renamed from posterior_flat_all.RData -- fit with unbounded long-term FOI sero, matches this branch's R0 = 1-exp(-FOI*age)
+  load("01_Data/sim_results_vc_ixchiq_model_longterm.RData")
+  load("01_Data/postsim_vc_ixchiq_model_longterm.RData")
+  load("01_Data/combined_nnv_df_region_coverage_model_longterm.RData")
   if (!is.null(REGIONS_TO_RUN)) {
     apply_regions_filter(REGIONS_TO_RUN)
   }
@@ -191,9 +173,42 @@ lhs_has_age_props <- function() {
     all(AGE_PROPS_O40_COLS %in% colnames(lhs_sample))
 }
 
+# Staleness guard (added 2026-08-31, chat record): 01_Data/lhs_sample.RData is
+# a CACHE of 01_setup.R's randomLHS() output, not regenerated automatically
+# when 01_setup.R changes. It silently went stale from 2026-06-15 to
+# 2026-08-27 (01_setup.R's LHS dimensionality changed from k=62, including 11
+# now-removed per-state ar_* columns, to k=51 -- which shifts every column's
+# values, not just the removed ones, since lhs::randomLHS()'s design depends
+# on total k) -- draw_level_xy_serostatus_finite.RData/Main_Table_1_*/
+# headline_summary_outbreak/headline_benefit_risk_plane_* were all built from
+# that stale cache. Fail loudly instead of silently loading an out-of-sync
+# cache again: regenerate via 02_Scripts/regenerate_lhs_sample_cache.R
+# whenever 01_setup.R or 02_setup_age_props.R changes.
+STALE_STATE_AR_COLS <- c("ar_ce", "ar_bh", "ar_pa", "ar_pn", "ar_rg", "ar_pi", "ar_tc", "ar_ag", "ar_mg", "ar_se", "ar_go")
+validate_lhs_sample_fresh <- function() {
+  if (any(STALE_STATE_AR_COLS %in% colnames(lhs_sample))) {
+    stop(
+      "lhs_sample has the old per-state ar_* columns (k=62 design) -- this is the ",
+      "2026-06-15 stale cache, not current 01_setup.R (k=51). Re-run ",
+      "02_Scripts/regenerate_lhs_sample_cache.R before this script.",
+      call. = FALSE
+    )
+  }
+  if (!all(lhs_sample$p_death_vacc_u65 == 0)) {
+    stop(
+      "lhs_sample$p_death_vacc_u65 is not all exactly 0 -- this predates the ",
+      "18-64 vaccine-attributable-death-is-impossible fix in 01_setup.R. ",
+      "Re-run 02_Scripts/regenerate_lhs_sample_cache.R before this script.",
+      call. = FALSE
+    )
+  }
+  invisible(TRUE)
+}
+
 if (!lhs_has_age_props()) {
   load("01_Data/lhs_sample.RData")
 }
+validate_lhs_sample_fresh()
 
 ensure_lhs_age_props <- function() {
   if (lhs_has_age_props()) return(invisible(TRUE))
@@ -252,55 +267,48 @@ step_done("SECTION 01")
 # =============================================================================
 step_msg("SECTION 02", "Build baseline draw objects (symptomatic burden)")
 # Step 2.1) Collect posterior rho draws by region
-if (DATA_MODE == "bahia") {
-  posterior_list <- list("Bahia" = posterior_bh_flat)
-  preui_all <- list("Bahia" = preui_bh_flat)
-  message("[03_v3] posterior_list / preui_all: Bahia only")
-} else {
-  # "original" and "flat" share the same pre-vacc posterior fit (posterior_flat_all)
-  posterior_list <- list(
-    "Ceará"               = posterior_ce,
-    "Bahia"               = posterior_bh,
-    "Paraíba"             = posterior_pa,
-    "Pernambuco"          = posterior_pn,
-    "Rio Grande do Norte" = posterior_rg,
-    "Piauí"               = posterior_pi,
-    "Alagoas"             = posterior_ag,
-    "Tocantins"           = posterior_tc,
-    "Minas Gerais"        = posterior_mg,
-    "Sergipe"             = posterior_se,
-    "Goiás"               = posterior_go
-  )
+# "original" and "flat" share the same pre-vacc posterior fit (posterior_flat_all)
+posterior_list <- list(
+  "Ceará"               = posterior_ce,
+  "Bahia"               = posterior_bh,
+  "Paraíba"             = posterior_pa,
+  "Pernambuco"          = posterior_pn,
+  "Rio Grande do Norte" = posterior_rg,
+  "Piauí"               = posterior_pi,
+  "Alagoas"             = posterior_ag,
+  "Tocantins"           = posterior_tc,
+  "Minas Gerais"        = posterior_mg,
+  "Sergipe"             = posterior_se,
+  "Goiás"               = posterior_go
+)
 
-  if (DATA_MODE == "flat") {
-    # flat: preui_flat_all.RData provides individual preui_* objects -> build list
-    preui_all <- list(
-      preui_ce,
-      preui_ag,
-      preui_bh,
-      preui_go,
-      preui_mg,
-      preui_pa,
-      preui_pi,
-      preui_pn,
-      preui_rg,
-      preui_se,
-      preui_tc
-    )
+# Both preui_flat_all.RData ("flat") and preui_longterm_all.RData
+# ("original") provide individual preui_* objects, not a pre-combined list
+# -- build preui_all from them either way.
+preui_all <- list(
+  preui_ce,
+  preui_ag,
+  preui_bh,
+  preui_go,
+  preui_mg,
+  preui_pa,
+  preui_pi,
+  preui_pn,
+  preui_rg,
+  preui_se,
+  preui_tc
+)
 
-    names(preui_all) <- c(
-      "Ceará", "Alagoas", "Bahia", "Goiás",
-      "Minas Gerais", "Paraíba", "Piauí",
-      "Pernambuco", "Rio Grande do Norte",
-      "Sergipe", "Tocantins"
-    )
-  }
-  # "original": preui_all.RData already loaded a named list 'preui_all' -> use as-is
+names(preui_all) <- c(
+  "Ceará", "Alagoas", "Bahia", "Goiás",
+  "Minas Gerais", "Paraíba", "Piauí",
+  "Pernambuco", "Rio Grande do Norte",
+  "Sergipe", "Tocantins"
+)
 
-  if (!is.null(REGIONS_TO_RUN)) {
-    apply_regions_filter_post_setup(REGIONS_TO_RUN)
-    message("[03_v3] posterior_list / preui_all: filtered to REGIONS_TO_RUN")
-  }
+if (!is.null(REGIONS_TO_RUN)) {
+  apply_regions_filter_post_setup(REGIONS_TO_RUN)
+  message("[03_v3] posterior_list / preui_all: filtered to REGIONS_TO_RUN")
 }
 
 rho_pool <- purrr::imap_dfr(posterior_list, function(post, region_name){
@@ -311,7 +319,7 @@ rho_pool <- purrr::imap_dfr(posterior_list, function(post, region_name){
   )
 })
 
-save(posterior_list, file = "01_Data/posterior_list.RData")
+#save(posterior_list, file = "01_Data/posterior_list.RData")
 
 # Step 2.2) Utility to aggregate draw-level pre/post burden totals
 calc_total_impact_draws <- function(pre_list, post_arr) {
@@ -360,24 +368,30 @@ step_done("SECTION 02")
 # =============================================================================
 # SECTION 03. Shared helper functions (rho scaling)
 # =============================================================================
-step_msg("SECTION 03", "Shared helper functions (rho scaling)")
-# Step 3.1) Scale symptomatic burden by rho to recover true burden
+step_msg("SECTION 03", "Shared helper functions (rho scaling -- now a no-op)")
+# Step 3.1) NOTE (2026-08): sim_results_list_rawsymp / age_array_raw_symp
+# already carry the TRUE symptomatic burden -- true_symptomatic =
+# p_sym * new_e * (1 - VE), with NO rho baked in -- per the
+# age_struc_bra_seir_m3.stan refit (rho = p_sym * rho_sym separation) and the
+# matching fix in sim_functions_final.R / nnv_list() / postsim_all_ui(). These
+# two helpers used to divide by rho to undo the OLD formula's baked-in rho
+# (0.5242478 * new_e * (1-VE) * rho); with that rho no longer present upstream,
+# dividing here would re-inflate already-true burden by ~1/rho (~7-10x). Kept
+# as passthroughs (rather than removed) so every call site that "reuses the
+# shared rho-scaling helpers" -- hosp/fatal/DALY draws, diagnostic
+# averted_bin_one -- stays fixed via this one change.
 set.seed(1)
 scale_symp_by_rho_pre <- function(pre_list, rho_vec) {
-  # pre_list: length n_draws, each is (age x week) matrix
-  # rho_vec: length n_draws
-  Map(function(mat, r) mat / r, pre_list, rho_vec)
+  pre_list
 }
 
 scale_symp_by_rho_post <- function(post_arr, rho_vec) {
-  # post_arr: (age x week x draw)
-  # rho_vec: length draw
-  for (i in seq_along(rho_vec)) post_arr[,,i] <- post_arr[,,i] / rho_vec[i]
   post_arr
 }
 
 
-# Step 3.2) Apply rho scaling to symptomatic burden draws
+# Step 3.2) total_*_true now equals total_* (no rho division) -- rho column
+# kept (unused for scaling) in case downstream code inspects it.
 all_draws_ix_true <- all_draws_ix %>%
   group_by(Region) %>%
   mutate(
@@ -386,8 +400,8 @@ all_draws_ix_true <- all_draws_ix %>%
   ) %>%
   ungroup() %>%
   mutate(
-    total_pre_true  = total_pre  / rho,
-    total_post_true = total_post / rho
+    total_pre_true  = total_pre,
+    total_post_true = total_post
   )
 step_done("SECTION 03")
 
@@ -997,11 +1011,11 @@ all_draws_sae_true <- all_draws_hosp_true %>%
 
 # Step 7.2) Save core draw-level tables
 step_msg("Step 7.2", "saving all_draws_* to 01_Data/")
-save(all_draws_ix_true, file = "01_Data/all_draws_ix_true.RData")
-save(all_draws_hosp_true, file = "01_Data/all_draws_hosp_true.RData")
-save(all_draws_daly_true, file = "01_Data/all_draws_daly_true.RData")
-save(all_draws_fatal_true, file = "01_Data/all_draws_fatal_true.RData")
-save(all_draws_sae_true, file = "01_Data/all_draws_sae_true.RData")
+save(all_draws_ix_true, file = paste0("01_Data/all_draws_ix_true", MODE_SUFFIX, ".RData"))
+save(all_draws_hosp_true, file = paste0("01_Data/all_draws_hosp_true", MODE_SUFFIX, ".RData"))
+save(all_draws_daly_true, file = paste0("01_Data/all_draws_daly_true", MODE_SUFFIX, ".RData"))
+save(all_draws_fatal_true, file = paste0("01_Data/all_draws_fatal_true", MODE_SUFFIX, ".RData"))
+save(all_draws_sae_true, file = paste0("01_Data/all_draws_sae_true", MODE_SUFFIX, ".RData"))
 step_done("Step 7.2 save all_draws_*")
 step_done("SECTION 07")
 
@@ -1136,7 +1150,7 @@ make_pr_gt1_wide <- function(ceac_ob, brr_type_filter) {
 
 # Format median and uncertainty interval as "med (lo-hi)"
 fmt_ci <- function(med, lo, hi) {
-  sprintf("%.2f (%.2f–%.2f)", med, lo, hi)
+  sprintf("%.1f (%.1f–%.1f)", med, lo, hi)
 }
 
 
@@ -1964,7 +1978,110 @@ brr_table_final_long <- dplyr::bind_rows(part1, part2) %>%
     )
   )
 
-ft_brr <- flextable::flextable(brr_table_final_long) %>%
+# ---- Main table: mechanism pivoted to columns, not rows -------------------
+# brr_table_final_long (Outcome x Setting x Age group x mechanism, 36 rows for
+# 3 outcomes x 3 settings x 2 ages x 2 mechanisms) is kept below as the full
+# supplementary table. For the main manuscript table, mechanism (Disease
+# blocking only vs Disease and infection blocking) is pivoted into paired
+# columns instead -- the same compression already applied to serostatus
+# (base vs adjusted, BRR_base/BRR_adj side by side) -- so rows drop to
+# Outcome x Setting x Age group (18 rows) without dropping any information.
+# Age group is kept as a row per explicit requirement (not pooled/dropped).
+# Pr(BRR>1) dropped from the main table (too dense) -- still in the
+# supplementary long table (brr_table_final_long) above for full detail.
+metric_cols <- c("Benefit", "Risk_base", "Risk_adj", "BRR_base", "BRR_adj")
+
+brr_table_final_wide <- part1 %>%
+  dplyr::select(Outcome, Setting, `Age group`, dplyr::all_of(metric_cols)) %>%
+  dplyr::rename_with(~ paste0(.x, "_DB"), dplyr::all_of(metric_cols)) %>%
+  dplyr::left_join(
+    part2 %>%
+      dplyr::select(Outcome, Setting, `Age group`, dplyr::all_of(metric_cols)) %>%
+      dplyr::rename_with(~ paste0(.x, "_DIB"), dplyr::all_of(metric_cols)),
+    by = c("Outcome", "Setting", "Age group")
+  ) %>%
+  dplyr::mutate(Setting = factor(Setting, levels = c("High", "Moderate", "Low"))) %>%
+  dplyr::arrange(Outcome, Setting, `Age group`) %>%
+  dplyr::mutate(
+    dplyr::across(
+      dplyr::ends_with(c("_DB", "_DIB")) & dplyr::matches("Benefit|Risk|BRR"),
+      ~ {
+        x <- gsub(" \\(", "\n(", .x, fixed = FALSE)
+        dplyr::case_when(
+          x %in% c("NA (NA-NA)", "NA (NA–NA)", "NA\n(NA-NA)", "NA\n(NA–NA)",
+                    "NA (NA NA)", "NA\n(NA NA)") ~ "beneficial",
+          TRUE ~ x
+        )
+      }
+    )
+  )
+
+metric_labels <- c(
+  Benefit   = "Benefit\n(per 10,000)",
+  Risk_base = "Risk (base)\n(per 10,000)",
+  Risk_adj  = "Risk (adj.)\n(per 10,000)",
+  BRR_base  = "BRR (base)",
+  BRR_adj   = "BRR (adj.)"
+)
+header_labels_wide <- c(
+  Setting = "Setting", `Age group` = "Age group",
+  setNames(metric_labels, paste0(names(metric_labels), "_DB")),
+  setNames(metric_labels, paste0(names(metric_labels), "_DIB"))
+)
+
+# One table PER outcome (Setting x Age group, 6 rows each) instead of one
+# combined 18-row table -- DALY is the main-text table; Death and SAE get
+# their own files. Outcome column dropped within each file since it's now
+# constant (redundant).
+build_outcome_table <- function(outcome_filter, out_file, caption_text) {
+  df <- brr_table_final_wide %>%
+    dplyr::filter(Outcome == outcome_filter) %>%
+    dplyr::select(-Outcome)
+
+  ft <- flextable::flextable(df) %>%
+    flextable::set_header_labels(values = as.list(header_labels_wide)) %>%
+    flextable::add_header_row(
+      values = c("", "", "Disease blocking only", "Disease and infection blocking"),
+      colwidths = c(1, 1, length(metric_cols), length(metric_cols))
+    ) %>%
+    flextable::theme_booktabs() %>%
+    flextable::bold(part = "header") %>%
+    flextable::align(align = "center", part = "all") %>%
+    flextable::align(j = 1:2, align = "left", part = "all") %>%
+    flextable::merge_v(j = c("Setting", "Age group")) %>%
+    flextable::valign(j = c("Setting", "Age group"), valign = "top") %>%
+    flextable::fontsize(size = 8, part = "all") %>%
+    flextable::autofit()
+
+  doc <- officer::read_docx() %>%
+    officer::body_add_par(caption_text, style = "heading 2") %>%
+    flextable::body_add_flextable(ft)
+
+  print(doc, target = out_file)
+  message("Saved: ", out_file)
+
+  xlsx_file <- sub("\\.docx$", ".xlsx", out_file)
+  writexl::write_xlsx(df, xlsx_file)
+  message("Saved: ", xlsx_file)
+}
+
+# Main text table: DALY only.
+build_outcome_table(
+  "DALY", paste0("06_Results/BRR_table_ori_setting", MODE_SUFFIX, ".docx"),
+  "Benefit-Risk Ratio (BRR) by Setting and Age group -- DALY"
+)
+# Companion single-outcome tables (Death, SAE) -- own files, not in the main table.
+build_outcome_table(
+  "Death", paste0("06_Results/BRR_table_ori_setting_Death", MODE_SUFFIX, ".docx"),
+  "Benefit-Risk Ratio (BRR) by Setting and Age group -- Death"
+)
+build_outcome_table(
+  "SAE", paste0("06_Results/BRR_table_ori_setting_SAE", MODE_SUFFIX, ".docx"),
+  "Benefit-Risk Ratio (BRR) by Setting and Age group -- SAE"
+)
+
+# ---- Supplementary table: full long format (mechanism as rows, 36 rows) ---
+ft_brr_long <- flextable::flextable(brr_table_final_long) %>%
   flextable::set_header_labels(
     Outcome     = "Outcome",
     Setting     = "Setting",
@@ -1987,17 +2104,19 @@ ft_brr <- flextable::flextable(brr_table_final_long) %>%
   flextable::fontsize(size = 9, part = "all") %>%
   flextable::autofit()
 
-ft_brr
-
-doc <- officer::read_docx() %>%
+doc_supp <- officer::read_docx() %>%
   officer::body_add_par(
-    "Benefit-Risk Ratio (BRR) by Outcome, Age group, and VE",
+    "Supplementary Table: Benefit-Risk Ratio (BRR) by Outcome, Setting, Age group, and Mechanism (full breakdown)",
     style = "heading 2"
   ) %>%
-  flextable::body_add_flextable(ft_brr)
+  flextable::body_add_flextable(ft_brr_long)
 
-print(doc, target = "06_Results/BRR_table_ori_setting.docx")
+print(doc_supp, target = paste0("06_Results/BRR_table_ori_setting_supplementary", MODE_SUFFIX, ".docx"))
+writexl::write_xlsx(brr_table_final_long, paste0("06_Results/BRR_table_ori_setting_supplementary", MODE_SUFFIX, ".xlsx"))
 step_done("SECTION 08C — Word export")
+
+save(brr_table_final_long, file = paste0("01_Data/brr_table_final_long", MODE_SUFFIX, ".RData"))
+save(draw_level_xy_serostatus, file = paste0("01_Data/draw_level_xy_serostatus", MODE_SUFFIX, ".RData"))
 
 # -----------------------------------------------------------------------------
 # SECTION 08D. BRR probability curve plots
