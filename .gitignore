@@ -9,3 +9,6 @@
 # Oversized reference archive (over GitHub's 100MB file limit)
 04_Refs/General.zip
 .DS_Store
+
+# Reproduction outputs (regenerated; never committed)
+reproduced_outputs/
