@@ -6,15 +6,15 @@
 # threshold curve below, both full-width) squeezed every facet too small.
 # This lays out the SAME three plots as a 2x2-ish grid instead:
 #
-#   A   B1
-#   C   B2
+#   A   C1
+#   B   C2
 #
 # Left column: A (infection-risk surface, 1x3 facets) stacked above
-# C (DALY benefit-risk surface, 2x3 facets, age x setting) -- these are
+# B (DALY benefit-risk surface, 2x3 facets, age x setting) -- these are
 # 17_figure2_travel_risk_surface.R's own p_A/p_B, unchanged.
 # Right column: the threshold curve (39_figure2_infection_risk_threshold_
 # curve.R's p), with its age_group facet switched from side-by-side
-# (nrow=1) to stacked (ncol=1) so its two panels (B1=18-64, B2=>=65) occupy
+# (nrow=1) to stacked (ncol=1) so its two panels (C1=18-64, C2=>=65) occupy
 # the same column instead of being squeezed next to each other.
 #
 # Output: 06_Results/figure2_grid_layout.png
@@ -39,17 +39,25 @@ env39 <- new.env(parent = globalenv())
 sys.source("02_Scripts/39_figure2_infection_risk_threshold_curve.R", envir = env39)
 # -> env39$p ("B. Probability that DALY benefit exceeds risk...", faceted nrow=1)
 
+# Panel B contour level: Pr(BRR>1) = 0.5 by default (i.e. median BRR = 1).
+# Set `contour_prob` before sourcing to draw a different level (e.g. 0.95 in
+# 51_figure2_grid_layout_contour95.R); output names then get a suffix.
+contour_prob <- get0("contour_prob", ifnotfound = 0.5)
+for (l in env17$p_B$layers) {
+  if (inherits(l$stat, "StatContour")) l$stat_params$breaks <- contour_prob
+}
+
 p_A <- env17$p_A
-p_C <- env17$p_B + labs(title = "C. DALY benefit-risk surface")
+p_B <- env17$p_B + labs(title = "B. DALY benefit-risk surface")
 
-p_B_stacked <- env39$p +
+p_C_stacked <- env39$p +
   facet_wrap(~age_group, ncol = 1) +
-  labs(title = "B. Probability that DALY benefit exceeds risk\nacross cumulative infection risk")
+  labs(title = "C. Probability that DALY benefit exceeds risk\nacross cumulative infection risk")
 
-left_col  <- (p_A / p_C) + plot_layout(heights = c(1, 2))
+left_col  <- (p_A / p_B) + plot_layout(heights = c(1, 2))
 # Give the probability curves a little more horizontal room than in the
 # original 2:1 split, while retaining the surface panels as the larger column.
-p_grid    <- (left_col | p_B_stacked) + plot_layout(widths = c(1.8, 1.2))
+p_grid    <- (left_col | p_C_stacked) + plot_layout(widths = c(1.8, 1.2))
 
 # Wider canvas + larger text throughout (chat record 2026-09-05) -- the
 # previous version's font sizes (inherited from theme_hm()/theme_threshold(),
@@ -65,9 +73,10 @@ p_grid <- p_grid & theme(
   legend.text   = element_text(size = 13)
 )
 
+out_suffix <- if (contour_prob == 0.5) "" else sprintf("_contour%02d", round(contour_prob * 100))
 out_files <- c(
-  "06_Results/figure2_grid_layout.png",
-  "07_Final_Results/Main_Figures/figure2_grid_layout.png"
+  sprintf("06_Results/figure2_grid_layout%s.png", out_suffix),
+  sprintf("07_Final_Results/Main_Figures/figure2_grid_layout%s.png", out_suffix)
 )
 dir.create("07_Final_Results/Main_Figures", showWarnings = FALSE, recursive = TRUE)
 for (out_file in out_files) {

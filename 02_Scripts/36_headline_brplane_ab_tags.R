@@ -147,7 +147,7 @@ build_and_save_brplane <- function(outcome_sel) {
   # Compact row titles avoid the wide tag column created by the longer
   # "Serostatus-adjusted risk" patchwork tag, leaving more room for panels.
   p_base <- build_benefit_risk_plane(outcome_sel, use_adj = FALSE, shared_rng = shared_rng) +
-    labs(title = "A. Base risk") +
+    labs(title = "Base risk") +
     theme(plot.title = element_text(face = "bold", size = 16, hjust = 0),
           plot.title.position = "plot")
   p_adj  <- build_benefit_risk_plane(outcome_sel, use_adj = TRUE,  shared_rng = shared_rng) +

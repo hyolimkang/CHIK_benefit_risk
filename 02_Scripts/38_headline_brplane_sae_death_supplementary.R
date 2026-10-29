@@ -77,7 +77,22 @@ build_setting_synthesis_data <- function(outcome_sel, use_adj = FALSE) {
 }
 
 build_benefit_risk_plane <- function(outcome_sel, use_adj = FALSE, shared_rng = NULL) {
-  d <- build_setting_synthesis_data(outcome_sel, use_adj)
+  d <- build_setting_synthesis_data(outcome_sel, use_adj) %>%
+    # Same deterministic log10-x offset as 36_headline_brplane_ab_tags.R:
+    # risk is identical across settings within an age group, so without it
+    # the three glyphs stack on one vertical line. All x components shift
+    # together so each point stays centred on its horizontal interval.
+    mutate(
+      x_offset = 10^case_when(
+        setting == "Low"      ~ -0.06,
+        setting == "Moderate" ~  0,
+        setting == "High"     ~  0.06,
+        TRUE                  ~  0
+      ),
+      risk_med_plot = risk_med * x_offset,
+      risk_lo_plot  = risk_lo  * x_offset,
+      risk_hi_plot  = risk_hi  * x_offset
+    )
 
   rng <- shared_rng %||% pmax(range(c(d$risk_med, d$averted_med, d$risk_lo, d$risk_hi,
                                        d$averted_lo, d$averted_hi), na.rm = TRUE), 1e-3)
@@ -88,10 +103,10 @@ build_benefit_risk_plane <- function(outcome_sel, use_adj = FALSE, shared_rng = 
   age_levels_present <- levels(droplevels(d$AgeCat %>% factor(levels = c("18-64", "65+"))))
   age_cols <- c("18-64" = "#4C72B0", "65+" = "#DD8452")[age_levels_present]
 
-  ggplot(d, aes(risk_med, averted_med, colour = AgeCat, shape = setting)) +
+  ggplot(d, aes(risk_med_plot, averted_med, colour = AgeCat, shape = setting)) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey40") +
     geom_errorbar(aes(ymin = averted_lo, ymax = averted_hi), width = 0, alpha = 0.3) +
-    geom_errorbarh(aes(xmin = risk_lo, xmax = risk_hi), height = 0, alpha = 0.3) +
+    geom_errorbarh(aes(xmin = risk_lo_plot, xmax = risk_hi_plot), height = 0, alpha = 0.3) +
     geom_point(size = 3, alpha = 0.85) +
     facet_wrap(~VE_label) +
     coord_equal(xlim = rng, ylim = rng) +

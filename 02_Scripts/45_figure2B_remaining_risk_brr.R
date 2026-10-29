@@ -9,7 +9,7 @@
 # calendar week which is state-specific and not directly comparable across
 # settings with different outbreak curves.
 #
-#   x = remaining symptomatic-infection risk after campaign initiation (%)
+#   x = remaining infection risk (all infections, incl. asymptomatic; lambda is the S->E FOI in age_struc_bra_seir_m3.stan) after campaign initiation (%)
 #       = 1 - exp(-sum(posterior lambda[week:end])), i.e. the cumulative
 #         hazard NOT YET accrued at the campaign's start week, converted to
 #         an attack rate. Same identity already used/validated for full-year
@@ -152,14 +152,14 @@ p <- ggplot(plot_df, aes(x = remaining_pct, y = BRR, colour = mechanism, linetyp
   geom_point(size = 1.5, alpha = 0.75, na.rm = TRUE) +
   scale_colour_manual(values = mechanism_cols, name = "Protection mechanism") +
   scale_linetype_manual(values = c("Base risk" = "solid", "Serostatus-adjusted risk" = "dashed"), name = "Risk assumption") +
-  scale_x_continuous(name = "Remaining infection risk after campaign initiation (%)",
+  scale_x_continuous(name = "Remaining infection risk after campaign start (%)",
                       labels = scales::label_number(suffix = "%", accuracy = 0.1),
                       breaks = scales::breaks_pretty(4),
                       expand = expansion(mult = 0.08)) +
   scale_y_log10(name = "Median DALY benefit-risk ratio (BRR)",
                 breaks = c(0.1, 1, 10, 100), labels = c("0.1", "1", "10", "100")) +
   facet_grid(age_group ~ setting) +
-  labs(title = "B. Outbreak-response benefit–risk across remaining epidemic risk") +
+  labs(title = "Outbreak-response benefit–risk across remaining epidemic risk") +
   theme_classic(base_size = 13) +
   theme(
     panel.grid.major.y = element_line(colour = "grey92", linewidth = 0.35),
